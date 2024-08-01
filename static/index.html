@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Video to Text Converter</title>
+    <style>
+        .progress-bar {
+            width: 100%;
+            background-color: #f0f0f0;
+            padding: 3px;
+            border-radius: 3px;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, .2);
+        }
+        .progress-bar-fill {
+            display: block;
+            height: 22px;
+            background-color: #659cef;
+            border-radius: 3px;
+            transition: width 500ms ease-in-out;
+        }
+        #result {
+            max-height: 300px;
+            overflow-y: auto;
+            border: 1px solid #ccc;
+            padding: 10px;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>Video to Text Converter</h1>
+    <form id="uploadForm">
+        <input type="file" name="video" accept="video/*" required>
+        <button type="submit">Convert</button>
+    </form>
+    <div id="progressContainer" style="display:none;">
+        <h3 id="statusText"></h3>
+        <div class="progress-bar">
+            <span class="progress-bar-fill" style="width: 0%;"></span>
+        </div>
+    </div>
+    <div id="result"></div>
+
+    <script>
+        const form = document.getElementById('uploadForm');
+        const progressContainer = document.getElementById('progressContainer');
+        const statusText = document.getElementById('statusText');
+        const progressBarFill = document.querySelector('.progress-bar-fill');
+        const resultDiv = document.getElementById('result');
+
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const formData = new FormData(form);
+            
+            progressContainer.style.display = 'block';
+            resultDiv.innerHTML = '';
+            statusText.textContent = 'Starting conversion...';
+            progressBarFill.style.width = '0%';
+
+            try {
+                const response = await fetch('/convert', {
+                    method: 'POST',
+                    body: formData
+                });
+
+                if (!response.ok) {
+                    throw new Error(`HTTP error! status: ${response.status}`);
+                }
+
+                const reader = response.body.getReader();
+                const decoder = new TextDecoder();
+
+                while (true) {
+                    const { value, done } = await reader.read();
+                    if (done) break;
+                    
+                    const decodedChunk = decoder.decode(value, { stream: true });
+                    const events = decodedChunk.split('\n\n');
+                    
+                    for (const event of events) {
+                        if (event.startsWith('data: ')) {
+                            const data = JSON.parse(event.slice(6));
+                            
+                            if (data.status === 'Error') {
+                                statusText.textContent = `Error: ${data.error}`;
+                            } else {
+                                statusText.textContent = `${data.status}: ${data.progress}% complete`;
+                                progressBarFill.style.width = `${data.progress}%`;
+
+                                if (data.text) {
+                                    resultDiv.innerHTML = `<h2>Extracted Text:</h2><p>${data.text}</p>`;
+                                    resultDiv.scrollTop = resultDiv.scrollHeight;
+                                }
+
+                                if (data.status === 'Completed') {
+                                    statusText.textContent = 'Conversion completed!';
+                                }
+                            }
+                        }
+                    }
+                }
+            } catch (error) {
+                console.error('Error:', error);
+                statusText.textContent = `Error: ${error.message}`;
+            }
+        });
+    </script>
+</body>
+</html>
